@@ -1,10 +1,12 @@
 package main
 
 import (
+	"database/sql"
+	"github.com/lainio/err2"
+	"github.com/lainio/err2/try"
 	"github.com/qwerty2586/store"
-	"xorm.io/xorm"
+	"log"
 )
-import _ "github.com/go-sql-driver/mysql"
 import _ "github.com/mattn/go-sqlite3"
 
 type User struct {
@@ -25,22 +27,24 @@ func (i *SimpleString) GetName() string {
 }
 
 func main() {
-	e, _ := xorm.NewEngine("sqlite3", "./test.db")
-	e.ShowSQL(true)
-	kv := store.New(e, "test")
+	err2.Catch(func(err error) {
+		log.Fatalln(err)
+	})
+	sq := try.To1(sql.Open("sqlite3", ":memory:"))
+	kv := try.To1(store.New(sq, "test"))
 	user := User{
 		Id:   1,
-		Name: "test_user",
+		Name: "test_user1",
 	}
 	simple_int := SimpleInt(40)
-	simple_string := SimpleString("test_simp")
-	kv.Set(&user, &simple_int, &simple_string)
+	simple_string := SimpleString("test_simp2")
+	try.To(kv.Set(&user, &simple_int, &simple_string))
 
 	user = User{}
 	simple_int = SimpleInt(0)
 	simple_string = SimpleString("")
 
-	kv.Get(&user, &simple_int, &simple_string)
+	try.To(kv.Get(&user, &simple_int, &simple_string))
 
 	println(user.Id)
 	println(user.Name)

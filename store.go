@@ -1,34 +1,35 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
+	"github.com/lainio/err2"
+	"github.com/lainio/err2/try"
 	"reflect"
-	"xorm.io/builder"
-	"xorm.io/xorm"
+	"strings"
 )
 
 type Store struct {
-	e          *xorm.Engine
+	db         *sql.DB
 	table_name string
 }
 
-type xormColumn struct {
-	Key       string `xorm:"varchar(128) notnull pk"`
-	Value     string `xorm:"text notnull"`
-	tableName string `xorm:"ignore"`
-}
-
-func (xc *xormColumn) TableName() string {
-	return xc.tableName
-}
-
-func New(_e *xorm.Engine, _table_name string) *Store {
+func New(_db *sql.DB, _table_name string) (store *Store, err error) {
 	//col := &xormColumn{tableName: _table_name}
-	_e.Exec("CREATE TABLE IF NOT EXISTS " + _table_name + " (" +
+	_, err = _db.Exec("CREATE TABLE IF NOT EXISTS " + _table_name + " (" +
 		"`key` varchar(128) not null, " +
 		"`value` text not null, " +
 		"primary key (`key`) on conflict replace)")
-	return &Store{e: _e, table_name: _table_name}
+
+	if err != nil {
+		return
+	}
+
+	store = &Store{
+		db:         _db,
+		table_name: _table_name,
+	}
+	return
 }
 
 type Named interface {
@@ -36,22 +37,21 @@ type Named interface {
 }
 
 func (k *Store) Get(beans ...any) (err error) {
+	defer err2.Return(&err)
+
 	bean_names := getKeyNames(beans...)
 
-	var cols []xormColumn
-	err = k.e.Table(k.table_name).Where(builder.In("key", bean_names)).Find(&cols)
-	if err != nil {
-		return
-	}
+	stmt := try.To1(k.db.Prepare("select * from " + k.table_name + " where `key` in (?" + strings.Repeat(",?", len(bean_names)-1) + ")"))
+	defer stmt.Close()
+	query := try.To1(stmt.Query(bean_names...))
+	defer query.Close()
 
-	for _, col := range cols {
-		key := col.Key
+	for query.Next() {
+		var key, value string
+		try.To(query.Scan(&key, &value))
 		for i, _ := range bean_names {
 			if bean_names[i] == key {
-				err = json.Unmarshal([]byte(col.Value), beans[i])
-				if err != nil {
-					return
-				}
+				try.To(json.Unmarshal([]byte(value), beans[i]))
 				break
 			}
 		}
@@ -60,26 +60,30 @@ func (k *Store) Get(beans ...any) (err error) {
 }
 
 func (k *Store) Set(beans ...any) (err error) {
+	defer err2.Return(&err)
 	bean_names := getKeyNames(beans...)
 
-	cols := make([]xormColumn, len(beans))
-	for i, bean := range beans {
-		cols[i].Key = bean_names[i]
-		var b []byte
-		b, err = json.Marshal(bean)
-		if err != nil {
-			return
+	s := "insert into " + k.table_name + " (`key`, `value`) values "
+	vals := []interface{}{}
+
+	for i, _ := range bean_names {
+		s += "(?,?)"
+		if i < len(bean_names)-1 {
+			s += ","
 		}
-		cols[i].Value = string(b)
+		vals = append(vals, bean_names[i], string(try.To1(json.Marshal(beans[i]))))
 	}
-	_, err = k.e.Table(k.table_name).Insert(cols)
+
+	stmt := try.To1(k.db.Prepare(s))
+	defer stmt.Close()
+	try.To1(stmt.Exec(vals...))
 	return
 }
 
-func getKeyNames(beans ...any) (keys []string) {
+func getKeyNames(beans ...any) (keys []any) {
 	named_inter := reflect.TypeOf((*Named)(nil)).Elem()
 
-	keys = make([]string, len(beans))
+	keys = make([]any, len(beans))
 	for i, bean := range beans {
 		bean_type := reflect.TypeOf(bean)
 		if bean_type.Kind() != reflect.Ptr {
