@@ -15,7 +15,10 @@ type Store struct {
 }
 
 func New(_db *sql.DB, _table_name string) (store *Store, err error) {
-	//col := &xormColumn{tableName: _table_name}
+
+	// sanitize table name, put out chars that are not allowed in table names
+	_table_name = sanitizeTableName(_table_name)
+
 	_, err = _db.Exec("CREATE TABLE IF NOT EXISTS " + _table_name + " (" +
 		"`key` varchar(128) not null, " +
 		"`value` text not null, " +
@@ -32,11 +35,21 @@ func New(_db *sql.DB, _table_name string) (store *Store, err error) {
 	return
 }
 
+// alow only alphanumeric characters and underscores
+func sanitizeTableName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' {
+			return r
+		}
+		return -1
+	}, name)
+}
+
 type Named interface {
 	GetName() string
 }
 
-func (k *Store) Get(beans ...any) (err error) {
+func (k *Store) Get(beans ...any) (found int, err error) {
 	defer err2.Return(&err)
 
 	bean_names := getKeyNames(beans...)
@@ -52,8 +65,20 @@ func (k *Store) Get(beans ...any) (err error) {
 		for i, _ := range bean_names {
 			if bean_names[i] == key {
 				try.To(json.Unmarshal([]byte(value), beans[i]))
+				found++
+				// faster reslicing
+				bean_names[i] = bean_names[len(bean_names)-1]
+				bean_names = bean_names[:len(bean_names)-1]
+				beans[i] = beans[len(beans)-1]
+				beans = beans[:len(beans)-1]
 				break
 			}
+		}
+	}
+	// use reflec.Zero to set the rest of the beans to zero
+	for i, bean_name := range bean_names {
+		if bean_name != "" {
+			reflect.ValueOf(beans[i]).Elem().Set(reflect.Zero(reflect.ValueOf(beans[i]).Elem().Type()))
 		}
 	}
 	return
