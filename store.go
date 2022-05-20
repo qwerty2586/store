@@ -49,7 +49,7 @@ type Named interface {
 	GetName() string
 }
 
-func (k *Store) Get(beans ...any) (found int, err error) {
+func (k *Store) Get(beans ...any) (found int64, err error) {
 	defer err2.Return(&err)
 
 	bean_names := getKeyNames(beans...)
@@ -102,6 +102,18 @@ func (k *Store) Set(beans ...any) (err error) {
 	stmt := try.To1(k.db.Prepare(s))
 	defer stmt.Close()
 	try.To1(stmt.Exec(vals...))
+	return
+}
+
+func (k *Store) Delete(beans ...any) (deleted int64, err error) {
+	defer err2.Return(&err)
+	bean_names := getKeyNames(beans...)
+
+	s := "delete from " + k.table_name + " where `key` in (?" + strings.Repeat(",?", len(bean_names)-1) + ")"
+	stmt := try.To1(k.db.Prepare(s))
+	defer stmt.Close()
+	res := try.To1(stmt.Exec(bean_names...))
+	deleted, _ = res.RowsAffected()
 	return
 }
 
