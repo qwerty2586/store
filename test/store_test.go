@@ -2,6 +2,7 @@ package test
 
 import (
 	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/lainio/err2"
 	"github.com/lainio/err2/assert"
 	"github.com/lainio/err2/try"
@@ -21,9 +22,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	})
 	// sql memory db
-	db := try.To1(sql.Open("sqlite3", ":memory:"))
+	driverName := "sqlite3"
+	db := try.To1(sql.Open(driverName, ":memory:"))
 
-	testStore = try.To1(store.New(db, test_table_name))
+	testStore = try.To1(store.New(driverName, db, test_table_name))
 	m.Run()
 	try.To(db.Close())
 }
