@@ -1,4 +1,4 @@
-package store
+package test
 
 import (
 	"database/sql"
@@ -6,11 +6,12 @@ import (
 	"github.com/lainio/err2/assert"
 	"github.com/lainio/err2/try"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/qwerty2586/store"
 	"testing"
 )
 
 var (
-	testStore *Store
+	testStore *store.Store
 )
 
 const test_table_name = "test_table"
@@ -22,7 +23,7 @@ func TestMain(m *testing.M) {
 	// sql memory db
 	db := try.To1(sql.Open("sqlite3", ":memory:"))
 
-	testStore = try.To1(New(db, test_table_name))
+	testStore = try.To1(store.New(db, test_table_name))
 	m.Run()
 	try.To(db.Close())
 }
